@@ -11,6 +11,7 @@ import (
 	pb "github.com/anthonycorbacho/opencensus-agent-go/pkg/api"
 	"github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/grpc-ecosystem/go-grpc-middleware/recovery"
+	"go.opencensus.io/exporter/jaeger"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
@@ -28,11 +29,17 @@ func main() {
 	trace.RegisterExporter(oce)
 	view.RegisterExporter(oce)
 
+	//initJaegerTracing()
+
 	// Some configurations to get observability signals out.
 	view.SetReportingPeriod(7 * time.Second)
 	trace.ApplyConfig(trace.Config{
 		DefaultSampler: trace.AlwaysSample(),
 	})
+
+	_, span := trace.StartSpan(context.Background(), "Foo")
+	fmt.Println(span.String())
+	span.End()
 
 	srv := grpc.NewServer(
 		grpc.StreamInterceptor(
@@ -63,4 +70,24 @@ func (us *userService) Get(ctx context.Context, ur *pb.UserRequest) (*pb.UserRes
 		Id:   "the ID",
 		Name: ur.Name,
 	}, nil
+}
+
+func initJaegerTracing() error {
+	exporter, err := jaeger.NewExporter(jaeger.Options{
+		CollectorEndpoint: fmt.Sprintf("http://%s%s", "127.0.0.1", ":14268/api/traces"),
+		AgentEndpoint:     fmt.Sprintf("%s%s", "127.0.0.1", ":6831"),
+		Process: jaeger.Process{
+			ServiceName: "test", //os.Getenv("SERVICE_NAME"),
+			Tags:        []jaeger.Tag{
+				//jaeger.StringTag("pod-id", os.Getenv("POD_NAME")),
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	trace.RegisterExporter(exporter)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	return nil
 }
